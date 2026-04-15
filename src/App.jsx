@@ -6,41 +6,32 @@ function App() {
     <div style={{ 
       backgroundColor: '#f4f6f8', 
       minHeight: '100vh',
-      fontFamily: '"Segoe UI", Roboto, Helvetica, Arial, sans-serif'
+      fontFamily: 'Arial, sans-serif',
+      margin: 0
     }}>
-      {/* Шапка в стиле Angar.md */}
+      {/* Фирменный Header Angar.md */}
       <header style={{ 
         backgroundColor: '#1a1a1a', 
-        padding: '15px 20px', 
+        padding: '15px 40px', 
         display: 'flex', 
         alignItems: 'center',
-        boxShadow: '0 2px 10px rgba(0,0,0,0.2)'
+        justifyContent: 'space-between',
+        boxShadow: '0 2px 10px rgba(0,0,0,0.3)'
       }}>
         <div style={{ 
-          fontSize: '24px', 
-          fontWeight: 'bold', 
+          fontSize: '26px', 
+          fontWeight: '900', 
           color: '#fff', 
           letterSpacing: '1px' 
         }}>
           ANGAR<span style={{ color: '#e31e24' }}>.</span>MD
         </div>
-        <div style={{ 
-          marginLeft: '20px', 
-          paddingLeft: '20px', 
-          borderLeft: '1px solid #444', 
-          color: '#aaa',
-          fontSize: '14px',
-          textTransform: 'uppercase'
-        }}>
-          Система управления объектами
+        <div style={{ color: '#888', fontSize: '12px', textTransform: 'uppercase' }}>
+          Панель управления проектами
         </div>
       </header>
 
-      <main style={{ 
-        padding: '30px 20px', 
-        maxWidth: '900px', 
-        margin: '0 auto' 
-      }}>
+      <main style={{ padding: '40px 20px', maxWidth: '800px', margin: '0 auto' }}>
         <AddProject />
         <ProjectList />
       </main>
