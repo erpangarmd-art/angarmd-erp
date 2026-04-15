@@ -1,59 +1,114 @@
-// ... (начало кода оставляем прежним: импорты и логика handleSubmit) ...
+import React, { useState } from 'react';
+import { collection, addDoc } from 'firebase/firestore';
+import { db } from './firebase';
+
+export default function AddProject() {
+  const [formData, setFormData] = useState({
+    name: '',
+    address: '',
+    status: 'active'
+  });
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value
+    });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setMessage('');
+
+    try {
+      await addDoc(collection(db, 'projects'), {
+        name: formData.name,
+        address: formData.address,
+        status: formData.status,
+        createdAt: new Date()
+      });
+      
+      setMessage('✅ Объект успешно добавлен!');
+      setFormData({ name: '', address: '', status: 'active' });
+    } catch (error) {
+      console.error("Ошибка при добавлении: ", error);
+      setMessage('❌ Ошибка при добавлении объекта');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div style={{ 
       backgroundColor: '#fff', 
-      padding: '25px', 
-      borderRadius: '4px', 
-      borderTop: '4px solid #e31e24', // Красная линия как акцент
-      boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
-      marginBottom: '30px'
+      padding: '30px', 
+      borderRadius: '2px', 
+      borderLeft: '5px solid #e31e24', 
+      boxShadow: '0 5px 15px rgba(0,0,0,0.05)',
+      marginBottom: '40px'
     }}>
-      <h2 style={{ margin: '0 0 20px 0', fontSize: '20px', color: '#1a1a1a' }}>Новый заказ</h2>
-      <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '15px' }}>
-        <input
-          name="name"
-          placeholder="Название объекта (например: Ангар 500м2)"
-          value={formData.name}
-          onChange={handleChange}
-          required
-          style={{ padding: '12px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '16px' }}
-        />
-        <input
-          name="address"
-          placeholder="Местоположение / Район"
-          value={formData.address}
-          onChange={handleChange}
-          required
-          style={{ padding: '12px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '16px' }}
-        />
-        <select 
-          name="status" 
-          value={formData.status} 
-          onChange={handleChange} 
-          style={{ padding: '12px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '16px', backgroundColor: '#fff' }}
-        >
-          <option value="active">В процессе строительства</option>
-          <option value="completed">Сдан в эксплуатацию</option>
-          <option value="paused">Заморожен</option>
-        </select>
+      <h2 style={{ margin: '0 0 25px 0', fontSize: '22px', fontWeight: 'bold', color: '#1a1a1a' }}>
+        Регистрация нового объекта
+      </h2>
+      <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '20px' }}>
+        <div style={{ display: 'grid', gap: '8px' }}>
+          <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#555' }}>Название объекта</label>
+          <input
+            name="name"
+            placeholder="Напр: Склад зерновых 1200м2"
+            value={formData.name}
+            onChange={handleChange}
+            required
+            style={{ padding: '12px', border: '1px solid #ccc', fontSize: '16px' }}
+          />
+        </div>
+        
+        <div style={{ display: 'grid', gap: '8px' }}>
+          <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#555' }}>Местоположение</label>
+          <input
+            name="address"
+            placeholder="Район, населенный пункт"
+            value={formData.address}
+            onChange={handleChange}
+            required
+            style={{ padding: '12px', border: '1px solid #ccc', fontSize: '16px' }}
+          />
+        </div>
+
+        <div style={{ display: 'grid', gap: '8px' }}>
+          <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#555' }}>Статус строительства</label>
+          <select 
+            name="status" 
+            value={formData.status} 
+            onChange={handleChange} 
+            style={{ padding: '12px', border: '1px solid #ccc', fontSize: '16px', backgroundColor: '#fff' }}
+          >
+            <option value="active">В процессе</option>
+            <option value="completed">Завершен</option>
+            <option value="paused">Приостановлено</option>
+          </select>
+        </div>
+
         <button 
           type="submit" 
-          disabled={loading} 
+          disabled={loading}
           style={{ 
             padding: '15px', 
             backgroundColor: loading ? '#ccc' : '#1a1a1a', 
             color: '#fff', 
             border: 'none', 
-            borderRadius: '4px', 
             fontSize: '16px', 
             fontWeight: 'bold',
             cursor: 'pointer',
-            transition: 'background 0.3s'
+            marginTop: '10px'
           }}
         >
-          {loading ? 'СОХРАНЕНИЕ...' : 'ДОБАВИТЬ В БАЗУ'}
+          {loading ? 'ЗАГРУЗКА...' : 'ВНЕСТИ В РЕЕСТР'}
         </button>
-        {message && <p style={{ textAlign: 'center', fontWeight: 'bold', color: message.includes('✅') ? 'green' : 'red' }}>{message}</p>}
+        {message && <p style={{ textAlign: 'center', fontWeight: 'bold' }}>{message}</p>}
       </form>
     </div>
   );
