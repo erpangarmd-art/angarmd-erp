@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db, storage } from './firebase';
-import { Wrench, Tractor, Camera, Clock, ShoppingCart, Check, X, AlertTriangle, ExternalLink } from 'lucide-react';
+import { Wrench, Tractor, Camera, Clock, ShoppingCart, Check, X, AlertTriangle, ExternalLink, Loader2, PenTool } from 'lucide-react';
 
 export default function Mechanics({ user }) {
   const [requests, setRequests] = useState([]);
@@ -11,7 +11,7 @@ export default function Mechanics({ user }) {
   // Поля формы
   const [equipment, setEquipment] = useState('');
   const [problem, setProblem] = useState('');
-  const [urgency, setUrgency] = useState('Обычная'); // Новое поле
+  const [urgency, setUrgency] = useState('Обычная');
   const [capturedPhoto, setCapturedPhoto] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -44,7 +44,6 @@ export default function Mechanics({ user }) {
     try {
       let photoUrl = "";
       if (capturedPhoto) {
-        // Уникальное имя файла
         const storageRef = ref(storage, `mechanics/${Date.now()}_${user.name}.jpg`);
         await uploadString(storageRef, capturedPhoto, 'data_url');
         photoUrl = await getDownloadURL(storageRef);
@@ -54,7 +53,7 @@ export default function Mechanics({ user }) {
         author: user.name,
         equipment: equipment,
         problem: problem,
-        urgency: urgency, // Сохраняем срочность
+        urgency: urgency,
         photoUrl: photoUrl,
         status: 'Ожидает', 
         timestamp: new Date()
@@ -82,15 +81,14 @@ export default function Mechanics({ user }) {
 
   const getStatusColor = (status) => {
     switch(status) {
-      case 'Ожидает': return { bg: '#fff3e0', text: '#e65100', icon: <Clock size={14} /> };
-      case 'В закупке': return { bg: '#e3f2fd', text: '#1565c0', icon: <ShoppingCart size={14} /> };
-      case 'Готово': return { bg: '#e8f5e9', text: '#2e7d32', icon: <Check size={14} /> };
-      case 'Отказ': return { bg: '#ffebee', text: '#c62828', icon: <X size={14} /> };
-      default: return { bg: '#f5f5f5', text: '#666', icon: null };
+      case 'Ожидает': return { bg: '#fffbeb', text: '#d97706', icon: <Clock size={14} /> };
+      case 'В закупке': return { bg: '#eff6ff', text: '#2563eb', icon: <ShoppingCart size={14} /> };
+      case 'Готово': return { bg: '#f0fdf4', text: '#059669', icon: <Check size={14} /> };
+      case 'Отказ': return { bg: '#fef2f2', text: '#dc2626', icon: <X size={14} /> };
+      default: return { bg: '#f3f4f6', text: '#6b7280', icon: null };
     }
   };
 
-  // Фильтрация заявок
   const filteredRequests = requests.filter(req => {
     if (filter === 'all') return true;
     if (filter === 'pending') return req.status === 'Ожидает';
@@ -100,135 +98,157 @@ export default function Mechanics({ user }) {
   });
 
   return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
-        <div style={{ backgroundColor: '#1a1a1a', padding: '8px', borderRadius: '8px', display: 'flex' }}>
-          <Wrench size={24} color="#fff" />
+    <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
+      
+      <style>{`
+        @keyframes pulse-red { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); } 70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); } }
+        .filter-btn { transition: all 0.2s ease-out; }
+        .filter-btn:hover { transform: translateY(-2px); }
+        .mechanic-card { transition: transform 0.2s ease; }
+        .mechanic-card:hover { transform: translateY(-3px); }
+      `}</style>
+
+      {/* КРАСИВАЯ ШАПКА */}
+      <div style={{ backgroundColor: '#111827', borderRadius: '24px', padding: '30px 24px', color: '#fff', marginBottom: '30px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.2)', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: '-20px', right: '-20px', opacity: 0.1, transform: 'scale(1.5)' }}>
+          <Wrench size={150} />
         </div>
-        <h2 style={{ margin: 0, color: '#1a1a1a', fontSize: '24px' }}>Техника и Ремонт</h2>
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <h2 style={{ margin: '0 0 6px 0', fontSize: '28px', fontWeight: '900', color: '#fff', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <PenTool size={28} color="#3b82f6" /> Техника и Ремонт
+          </h2>
+          <p style={{ margin: 0, color: '#9ca3af', fontSize: '15px', fontWeight: '500' }}>Обслуживание автопарка и спецтехники</p>
+        </div>
       </div>
 
-      {/* ФОРМА СОЗДАНИЯ (Видят все, кроме ПТО, если им не нужно) */}
+      {/* ФОРМА СОЗДАНИЯ (Видят все, кроме ПТО) */}
       {user.role !== 'pto' && (
-        <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginBottom: '30px', borderTop: '4px solid #1a1a1a' }}>
-          <h3 style={{ margin: '0 0 20px 0', color: '#1a1a1a', fontSize: '18px' }}>🔧 Новая заявка на обслуживание</h3>
+        <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.04)', marginBottom: '40px', border: '1px solid #f1f5f9' }}>
+          <h3 style={{ margin: '0 0 24px 0', color: '#1e293b', fontSize: '20px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            🔧 Новая заявка на ремонт
+          </h3>
           
-          <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '15px' }}>
+          <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '20px' }}>
             
-            <div style={{ display: 'grid', gap: '5px' }}>
-              <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#666' }}>🚜 Выберите технику</label>
+            <div style={{ display: 'grid', gap: '6px' }}>
+              <label style={{ fontSize: '13px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Выбор техники</label>
               <input 
-                type="text" 
-                list="equip-list" 
-                placeholder="Например: Экскаватор JCB" 
-                value={equipment} 
-                onChange={(e) => setEquipment(e.target.value)} 
-                required 
-                style={{ padding: '12px', border: '1px solid #ccc', borderRadius: '4px', fontSize: '16px' }} 
+                type="text" list="equip-list" placeholder="Например: Экскаватор JCB" 
+                value={equipment} onChange={(e) => setEquipment(e.target.value)} required 
+                style={{ width: '100%', padding: '16px', border: '2px solid #e2e8f0', borderRadius: '12px', fontSize: '16px', backgroundColor: '#f8fafc', color: '#0f172a', fontWeight: '600', outline: 'none', boxSizing: 'border-box' }} 
               />
               <datalist id="equip-list">
                 {equipmentList.map(eq => <option key={eq} value={eq} />)}
               </datalist>
             </div>
 
-            <div style={{ display: 'grid', gap: '5px' }}>
-              <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#666' }}>⚙️ Что сломалось / Какая запчасть нужна?</label>
+            <div style={{ display: 'grid', gap: '6px' }}>
+              <label style={{ fontSize: '13px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Что сломалось / Какая запчасть нужна?</label>
               <textarea 
-                rows="3"
-                placeholder="Укажите деталь или опишите симптомы поломки..." 
-                value={problem} 
-                onChange={(e) => setProblem(e.target.value)} 
-                required 
-                style={{ padding: '12px', border: '1px solid #ccc', borderRadius: '4px', fontSize: '14px', resize: 'vertical' }} 
+                rows="3" placeholder="Укажите деталь или опишите симптомы поломки..." 
+                value={problem} onChange={(e) => setProblem(e.target.value)} required 
+                style={{ width: '100%', padding: '16px', border: '2px solid #e2e8f0', borderRadius: '12px', fontSize: '15px', resize: 'vertical', backgroundColor: '#f8fafc', outline: 'none', boxSizing: 'border-box' }} 
               />
             </div>
 
-            <div style={{ display: 'grid', gap: '5px' }}>
-              <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#666' }}>⚡ Срочность</label>
-              <select value={urgency} onChange={(e) => setUrgency(e.target.value)} style={{ padding: '12px', border: '1px solid #ccc', borderRadius: '4px', fontSize: '16px', backgroundColor: urgency === 'КРИТИЧНО! Простой' ? '#ffebee' : '#fff', color: urgency === 'КРИТИЧНО! Простой' ? '#c62828' : '#333', fontWeight: urgency === 'КРИТИЧНО! Простой' ? 'bold' : 'normal' }}>
+            <div style={{ display: 'grid', gap: '6px' }}>
+              <label style={{ fontSize: '13px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Срочность</label>
+              <select value={urgency} onChange={(e) => setUrgency(e.target.value)} style={{ width: '100%', padding: '16px', border: '2px solid', borderColor: urgency === 'КРИТИЧНО! Простой' ? '#fca5a5' : '#e2e8f0', borderRadius: '12px', fontSize: '16px', backgroundColor: urgency === 'КРИТИЧНО! Простой' ? '#fef2f2' : '#f8fafc', color: urgency === 'КРИТИЧНО! Простой' ? '#dc2626' : '#0f172a', fontWeight: urgency === 'КРИТИЧНО! Простой' ? '800' : '600', outline: 'none', boxSizing: 'border-box' }}>
                 <option value="Обычная">Плановое ТО / Не горит</option>
                 <option value="КРИТИЧНО! Простой">🔥 КРИТИЧНО! Техника стоит (Простой)</option>
               </select>
             </div>
 
             {/* Загрузка фото */}
-            <div style={{ textAlign: 'center', marginTop: '5px' }}>
+            <div style={{ marginTop: '10px' }}>
               {capturedPhoto ? (
-                <div style={{ position: 'relative' }}>
-                  <img src={capturedPhoto} alt="Превью" style={{ width: '100%', maxHeight: '250px', objectFit: 'cover', borderRadius: '8px', border: '2px solid #2e7d32' }} />
-                  <button type="button" onClick={() => setCapturedPhoto(null)} style={{ position: 'absolute', top: '10px', right: '10px', backgroundColor: '#e31e24', color: '#fff', border: 'none', borderRadius: '50%', width: '30px', height: '30px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={16}/></button>
+                <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
+                  <img src={capturedPhoto} alt="Превью" style={{ width: '100%', maxHeight: '300px', objectFit: 'cover', borderRadius: '16px', border: '4px solid #10b981' }} />
+                  <button type="button" onClick={() => setCapturedPhoto(null)} style={{ position: 'absolute', top: '15px', right: '15px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '50%', width: '36px', height: '36px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 10px rgba(239, 68, 68, 0.4)' }}><X size={18}/></button>
                 </div>
               ) : (
                 <div 
                   onClick={() => photoInputRef.current.click()}
-                  style={{ padding: '20px', border: '2px dashed #ccc', borderRadius: '8px', cursor: 'pointer', backgroundColor: '#fafafa', color: '#666', fontWeight: 'bold', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', transition: 'all 0.2s' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#1a1a1a'; e.currentTarget.style.color = '#1a1a1a'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#ccc'; e.currentTarget.style.color = '#666'; }}
+                  style={{ padding: '30px', border: '2px dashed #cbd5e1', borderRadius: '16px', cursor: 'pointer', backgroundColor: '#f8fafc', color: '#64748b', fontWeight: '800', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', transition: 'all 0.2s' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.backgroundColor = '#eff6ff'; e.currentTarget.style.color = '#2563eb'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.backgroundColor = '#f8fafc'; e.currentTarget.style.color = '#64748b'; }}
                 >
-                  <Camera size={32} />
+                  <Camera size={36} />
                   <span>ПРИКРЕПИТЬ ФОТО ПОЛОМКИ / ЗАПЧАСТИ</span>
                 </div>
               )}
               <input type="file" accept="image/*" capture="environment" ref={photoInputRef} onChange={handlePhotoCapture} style={{ display: 'none' }} />
             </div>
 
-            <button type="submit" disabled={loading} style={{ padding: '15px', backgroundColor: '#1a1a1a', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' }}>
-              {loading ? 'ОТПРАВКА...' : 'ОТПРАВИТЬ ЗАЯВКУ'}
+            <button type="submit" disabled={loading} style={{ width: '100%', padding: '18px', backgroundColor: '#1e293b', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '16px', fontWeight: '900', cursor: 'pointer', marginTop: '10px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', boxShadow: '0 10px 20px -5px rgba(0,0,0,0.2)' }}>
+              {loading ? <Loader2 className="spin-animation" size={20} /> : 'ОТПРАВИТЬ ЗАЯВКУ В РЕМОНТ'}
             </button>
           </form>
         </div>
       )}
 
       {/* --- ЛЕНТА ЗАЯВОК НА ТЕХНИКУ --- */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-        <h3 style={{ margin: 0, color: '#1a1a1a', fontSize: '18px' }}>📋 Статус заявок</h3>
-      </div>
-
-      {/* Фильтры */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '5px' }}>
-        <button onClick={() => setFilter('all')} style={{ padding: '6px 14px', borderRadius: '20px', border: filter==='all' ? 'none' : '1px solid #ccc', backgroundColor: filter==='all' ? '#1a1a1a' : '#fff', color: filter==='all' ? '#fff' : '#666', cursor: 'pointer', fontSize: '13px' }}>Все</button>
-        <button onClick={() => setFilter('pending')} style={{ padding: '6px 14px', borderRadius: '20px', border: filter==='pending' ? 'none' : '1px solid #ff9800', backgroundColor: filter==='pending' ? '#ff9800' : '#fff', color: filter==='pending' ? '#fff' : '#ff9800', cursor: 'pointer', fontSize: '13px' }}>Новые ({requests.filter(r=>r.status==='Ожидает').length})</button>
-        <button onClick={() => setFilter('process')} style={{ padding: '6px 14px', borderRadius: '20px', border: filter==='process' ? 'none' : '1px solid #2196f3', backgroundColor: filter==='process' ? '#2196f3' : '#fff', color: filter==='process' ? '#fff' : '#2196f3', cursor: 'pointer', fontSize: '13px' }}>В закупке</button>
-        <button onClick={() => setFilter('done')} style={{ padding: '6px 14px', borderRadius: '20px', border: filter==='done' ? 'none' : '1px solid #4caf50', backgroundColor: filter==='done' ? '#4caf50' : '#fff', color: filter==='done' ? '#fff' : '#4caf50', cursor: 'pointer', fontSize: '13px' }}>Закрытые</button>
+      <div style={{ marginBottom: '24px' }}>
+        <h3 style={{ margin: '0 0 16px 0', color: '#1e293b', fontSize: '22px', fontWeight: '900' }}>📋 Статус заявок</h3>
+        
+        {/* Фильтры (Pills) */}
+        <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '10px', scrollbarWidth: 'none' }}>
+          <button className="filter-btn" onClick={() => setFilter('all')} style={{ padding: '8px 20px', borderRadius: '100px', border: 'none', backgroundColor: filter==='all' ? '#1e293b' : '#f1f5f9', color: filter==='all' ? '#fff' : '#64748b', cursor: 'pointer', fontSize: '14px', fontWeight: '800', whiteSpace: 'nowrap' }}>Все</button>
+          <button className="filter-btn" onClick={() => setFilter('pending')} style={{ padding: '8px 20px', borderRadius: '100px', border: 'none', backgroundColor: filter==='pending' ? '#f59e0b' : '#f1f5f9', color: filter==='pending' ? '#fff' : '#64748b', cursor: 'pointer', fontSize: '14px', fontWeight: '800', whiteSpace: 'nowrap' }}>Новые ({requests.filter(r=>r.status==='Ожидает').length})</button>
+          <button className="filter-btn" onClick={() => setFilter('process')} style={{ padding: '8px 20px', borderRadius: '100px', border: 'none', backgroundColor: filter==='process' ? '#3b82f6' : '#f1f5f9', color: filter==='process' ? '#fff' : '#64748b', cursor: 'pointer', fontSize: '14px', fontWeight: '800', whiteSpace: 'nowrap' }}>В закупке</button>
+          <button className="filter-btn" onClick={() => setFilter('done')} style={{ padding: '8px 20px', borderRadius: '100px', border: 'none', backgroundColor: filter==='done' ? '#10b981' : '#f1f5f9', color: filter==='done' ? '#fff' : '#64748b', cursor: 'pointer', fontSize: '14px', fontWeight: '800', whiteSpace: 'nowrap' }}>Закрытые</button>
+        </div>
       </div>
       
-      <div style={{ display: 'grid', gap: '15px' }}>
+      {/* Карточки Заявок */}
+      <div style={{ display: 'grid', gap: '20px' }}>
         {filteredRequests.map(req => {
           const statusStyle = getStatusColor(req.status);
           const isCritical = req.urgency === 'КРИТИЧНО! Простой';
           
           return (
-            <div key={req.id} style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', borderLeft: isCritical ? '5px solid #e31e24' : '5px solid #1a1a1a' }}>
+            <div key={req.id} className="mechanic-card" style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '24px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)', border: '1px solid #f1f5f9', position: 'relative', overflow: 'hidden' }}>
               
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+              {/* Левая полоска для критичных */}
+              {isCritical && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '6px', backgroundColor: '#ef4444' }}></div>}
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
                 <div>
-                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1a1a1a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Tractor size={20} color={isCritical ? "#e31e24" : "#1a1a1a"} /> {req.equipment}
+                  <div style={{ fontSize: '20px', fontWeight: '900', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                    <div style={{ backgroundColor: isCritical ? '#fef2f2' : '#f1f5f9', padding: '8px', borderRadius: '10px', color: isCritical ? '#dc2626' : '#475569' }}>
+                      <Tractor size={20} />
+                    </div>
+                    {req.equipment}
                   </div>
-                  <div style={{ fontSize: '12px', color: '#666', marginTop: '6px' }}>
-                    От: <b>{req.author}</b> | {req.timestamp?.toDate().toLocaleString('ru-RU', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})}
+                  <div style={{ fontSize: '13px', color: '#64748b', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ color: '#3b82f6' }}>👤 {req.author}</span>
+                    <span>•</span>
+                    <span>{req.timestamp?.toDate().toLocaleString('ru-RU', {day:'2-digit', month:'long', hour:'2-digit', minute:'2-digit'})}</span>
                   </div>
+                  
                   {isCritical && (
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', backgroundColor: '#ffebee', color: '#c62828', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', marginTop: '6px' }}>
-                      <AlertTriangle size={12} /> ТЕХНИКА ПРОСТАИВАЕТ
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: '#fef2f2', color: '#dc2626', padding: '4px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: '900', marginTop: '12px', animation: 'pulse-red 2s infinite' }}>
+                      <AlertTriangle size={14} /> ТЕХНИКА ПРОСТАИВАЕТ
                     </div>
                   )}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: statusStyle.bg, color: statusStyle.text, padding: '6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold' }}>
+
+                {/* Бейдж Статуса */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: statusStyle.bg, color: statusStyle.text, padding: '8px 14px', borderRadius: '12px', fontSize: '13px', fontWeight: '800' }}>
                   {statusStyle.icon} {req.status}
                 </div>
               </div>
 
-              <div style={{ backgroundColor: '#f8f9fa', padding: '15px', borderRadius: '6px', border: '1px solid #eee', marginBottom: '15px', fontSize: '14px', color: '#333' }}>
+              <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px', fontSize: '15px', color: '#1e293b', fontWeight: '500', lineHeight: '1.5' }}>
                 {req.problem}
               </div>
 
               {req.photoUrl && (
-                <div style={{ marginBottom: '15px' }}>
-                  <a href={req.photoUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', position: 'relative' }}>
-                    <img src={req.photoUrl} alt="Фото поломки" style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '6px', border: '2px solid #ddd' }} />
-                    <div style={{ position: 'absolute', bottom: '-8px', right: '-8px', backgroundColor: '#fff', borderRadius: '50%', padding: '4px', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                      <ExternalLink size={14} color="#666" />
+                <div style={{ marginBottom: '20px' }}>
+                  <a href={req.photoUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '2px solid #e2e8f0' }}>
+                    <img src={req.photoUrl} alt="Фото поломки" style={{ width: '100px', height: '100px', objectFit: 'cover', display: 'block' }} />
+                    <div style={{ position: 'absolute', bottom: '6px', right: '6px', backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: '8px', padding: '6px', backdropFilter: 'blur(4px)' }}>
+                      <ExternalLink size={16} color="#0f172a" />
                     </div>
                   </a>
                 </div>
@@ -236,22 +256,22 @@ export default function Mechanics({ user }) {
 
               {/* УПРАВЛЕНИЕ СТАТУСАМИ (Видят только Админ и ПТО) */}
               {(user.role === 'admin' || user.role === 'pto') && req.status !== 'Готово' && req.status !== 'Отказ' && (
-                <div style={{ display: 'flex', gap: '10px', borderTop: '1px solid #eee', paddingTop: '15px' }}>
+                <div style={{ display: 'flex', gap: '12px', borderTop: '2px dashed #e2e8f0', paddingTop: '20px' }}>
                   
                   {req.status === 'Ожидает' && (
-                    <button onClick={() => handleUpdateStatus(req.id, 'В закупке')} style={{ flex: 1, padding: '10px', backgroundColor: '#e3f2fd', color: '#1565c0', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>
+                    <button onClick={() => handleUpdateStatus(req.id, 'В закупке')} style={{ flex: 1, padding: '14px', backgroundColor: '#eff6ff', color: '#2563eb', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: '900', fontSize: '14px', transition: 'all 0.2s' }}>
                       ЗАКАЗАТЬ ДЕТАЛЬ
                     </button>
                   )}
 
                   {req.status === 'В закупке' && (
-                    <button onClick={() => handleUpdateStatus(req.id, 'Готово')} style={{ flex: 1, padding: '10px', backgroundColor: '#e8f5e9', color: '#2e7d32', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>
+                    <button onClick={() => handleUpdateStatus(req.id, 'Готово')} style={{ flex: 1, padding: '14px', backgroundColor: '#f0fdf4', color: '#059669', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: '900', fontSize: '14px', transition: 'all 0.2s' }}>
                       ПОЧИНЕНО / ВЫДАНО
                     </button>
                   )}
 
-                  <button onClick={() => handleUpdateStatus(req.id, 'Отказ')} style={{ padding: '10px 15px', backgroundColor: '#ffebee', color: '#c62828', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>
-                    ОТКАЗ
+                  <button onClick={() => handleUpdateStatus(req.id, 'Отказ')} style={{ padding: '14px 20px', backgroundColor: '#fef2f2', color: '#dc2626', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: '900', fontSize: '14px', transition: 'all 0.2s' }}>
+                    <X size={20} />
                   </button>
                 </div>
               )}
@@ -259,7 +279,12 @@ export default function Mechanics({ user }) {
             </div>
           );
         })}
-        {filteredRequests.length === 0 && <div style={{ textAlign: 'center', color: '#888', padding: '30px', backgroundColor: '#fff', borderRadius: '8px' }}>В этой категории пусто.</div>}
+        {filteredRequests.length === 0 && (
+          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '40px', backgroundColor: '#fff', borderRadius: '24px', border: '2px dashed #e2e8f0', fontWeight: '700', fontSize: '15px' }}>
+            <Wrench size={40} style={{ margin: '0 auto 12px auto', opacity: 0.3 }} />
+            В этой категории пусто
+          </div>
+        )}
       </div>
     </div>
   );

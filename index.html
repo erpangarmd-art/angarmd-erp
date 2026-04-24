@@ -2,7 +2,12 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Angar ERP">
+    
     <title>Angar.md ERP</title>
     
     <link rel="manifest" href="/manifest.json" />
@@ -10,6 +15,26 @@
     <link rel="apple-touch-icon" href="/favicon.png" />
     <meta name="theme-color" content="#111827" />
     
+    <style>
+      /* Убираем стандартные отступы и системный зум на мобильных */
+      body {
+        margin: 0;
+        padding: 0;
+        -webkit-tap-highlight-color: transparent; /* Убираем синий блик при нажатии на iOS */
+        touch-action: manipulation; /* Улучшает отзывчивость на тапы */
+      }
+      
+      /* Предотвращаем изменение размера шрифта при повороте экрана */
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+
+      /* Глобально исправляем проблему, когда iOS приближает экран в инпутах */
+      input, select, textarea {
+        font-size: 16px !important;
+      }
+    </style>
+
     <script 
       async 
       src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDYDcigAsKl7gY1qROG3RY66kItFli-l64&libraries=places">

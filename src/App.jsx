@@ -14,25 +14,20 @@ function App() {
   const [user, setUser] = useState(null); 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
+  // ==========================================
+  // ГЛАВНЫЙ ЭКРАН (ВЫБОР ПРОФИЛЯ)
+  // ==========================================
   if (!user) {
     return (
-      <div style={{ backgroundColor: '#f4f6f8', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}>
-        <header style={{ backgroundColor: '#111827', padding: '18px 20px', color: '#fff', textAlign: 'center', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
-          {/* ЛОГОТИП НА ЭКРАНЕ ВХОДА ИСПРАВЛЕН НА .PNG */}
-          <div style={{ backgroundColor: '#fff', padding: '6px 16px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', boxShadow: '0 2px 10px rgba(0,0,0,0.2)' }}>
-            <img src="/logo.png" alt="ANGAR.MD" style={{ height: '32px', objectFit: 'contain' }} />
-          </div>
-        </header>
-        <Login onLogin={(loggedInUser) => {
-          setUser(loggedInUser);
-          if (loggedInUser.role === 'admin') setActiveTab('reports');
-          else if (loggedInUser.role === 'pto') setActiveTab('pto');
-          else if (loggedInUser.role === 'foreman') setActiveTab('objects'); 
-          else if (loggedInUser.role === 'driver') setActiveTab('transport');
-          else if (loggedInUser.role === 'mechanic') setActiveTab('mechanics');
-          else setActiveTab('attendance');
-        }} />
-      </div>
+      <Login onLogin={(loggedInUser) => {
+        setUser(loggedInUser);
+        if (loggedInUser.role === 'admin') setActiveTab('reports');
+        else if (loggedInUser.role === 'pto') setActiveTab('pto');
+        else if (loggedInUser.role === 'foreman') setActiveTab('objects'); 
+        else if (loggedInUser.role === 'driver') setActiveTab('transport');
+        else if (loggedInUser.role === 'mechanic') setActiveTab('mechanics');
+        else setActiveTab('attendance');
+      }} />
     );
   }
 
@@ -54,10 +49,13 @@ function App() {
     { id: 'objects', label: 'Объекты', icon: <LayoutDashboard size={22} /> },
     { id: 'pto', label: ptoLabel, icon: ptoIcon }, 
     { id: 'transport', label: 'Транспорт', icon: <Truck size={22} /> },
+    { id: 'personnel', label: 'Команда', icon: <Users size={22} /> }, 
     { id: 'attendance', label: 'Смена', icon: <Users size={22} /> },
   ];
 
+  // ИСПРАВЛЕНИЕ: Добавили ПТО доступ к объектам
   const ptoMenuItems = [
+    { id: 'objects', label: 'Объекты', icon: <LayoutDashboard size={22} /> },
     { id: 'pto', label: 'Закупки', icon: <ShoppingCart size={22} /> },
     { id: 'mechanics', label: 'Запчасти', icon: <Wrench size={22} /> },
     { id: 'attendance', label: 'Смена', icon: <Users size={22} /> },
@@ -94,7 +92,7 @@ function App() {
   const roleNames = {
     'admin': 'Директор',
     'foreman': 'Прораб',
-    'pto': 'ПТО',
+    'pto': 'Начальник ПТО', // Обновили название здесь для шапки
     'driver': 'Водитель',
     'mechanic': 'Механик',
     'worker': 'Рабочий'
@@ -106,9 +104,9 @@ function App() {
       {/* ХЕДЕР ПРЕМИУМ */}
       <header style={{ backgroundColor: '#111827', padding: '16px 24px', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 100, borderBottom: '3px solid #e31e24' }}>
         
-        {/* ЛОГОТИП ВНУТРИ ПРИЛОЖЕНИЯ ИСПРАВЛЕН НА .PNG */}
+        {/* ЛОГОТИП ВНУТРИ ПРИЛОЖЕНИЯ ИСПРАВЛЕН НА /favicon.png */}
         <div style={{ backgroundColor: '#fff', padding: '4px 12px', borderRadius: '6px', display: 'flex', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
-          <img src="/logo.png" alt="ANGAR.MD" style={{ height: '24px', objectFit: 'contain' }} />
+          <img src="/favicon.png" alt="ANGAR.MD" style={{ height: '24px', objectFit: 'contain' }} />
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
@@ -169,13 +167,14 @@ function App() {
       <main style={{ padding: '24px 20px', maxWidth: '800px', margin: '0 auto', paddingBottom: user.role === 'admin' ? '60px' : '100px' }}>
         
         {activeTab === 'reports' && user.role === 'admin' && <Reports />}
-        {activeTab === 'objects' && ['admin', 'foreman'].includes(user.role) && <Objects user={user} />}
-        {activeTab === 'personnel' && user.role === 'admin' && <ManageWorkers />}
         
+        {/* ИСПРАВЛЕНИЕ: Добавили 'pto' в список ролей, которым доступны Объекты */}
+        {activeTab === 'objects' && ['admin', 'foreman', 'pto'].includes(user.role) && <Objects user={user} />}
+        
+        {activeTab === 'personnel' && ['admin', 'foreman'].includes(user.role) && <ManageWorkers user={user} />}
         {activeTab === 'pto' && ['admin', 'pto', 'foreman'].includes(user.role) && <PTO user={user} />}
         {activeTab === 'transport' && ['admin', 'foreman', 'driver'].includes(user.role) && <Transport user={user} />}
         {activeTab === 'mechanics' && ['admin', 'pto', 'mechanic', 'driver', 'foreman'].includes(user.role) && <Mechanics user={user} />}
-
         {activeTab === 'attendance' && user.role !== 'admin' && <Attendance user={user} />}
         
       </main>

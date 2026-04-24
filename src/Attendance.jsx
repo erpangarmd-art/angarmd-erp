@@ -1,222 +1,181 @@
 import React, { useState, useEffect } from 'react';
-import { collection, addDoc, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
-import { ref, uploadString, getDownloadURL } from 'firebase/storage';
-import { db, storage } from './firebase';
-import { MapPin, Camera, ShieldAlert } from 'lucide-react';
+import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { db } from './firebase';
+import { Search, ChevronDown, Lock, ShieldCheck } from 'lucide-react';
 
-// Функция высчитывания дистанции между двумя GPS координатами (в метрах)
-const getDistanceInMeters = (lat1, lon1, lat2, lon2) => {
-  const R = 6371e3; // Радиус Земли в метрах
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return Math.round(R * c); 
+const roleConfig = {
+  admin: { text: 'Директор', color: '#e31e24', bg: '#fef2f2' },
+  foreman: { text: 'Прораб', color: '#059669', bg: '#ecfdf5' },
+  pto: { text: 'Начальник ПТО', color: '#d97706', bg: '#fffbeb' },
+  driver: { text: 'Водитель', color: '#2563eb', bg: '#eff6ff' },
+  worker: { text: 'Рабочий', color: '#ea580c', bg: '#fff7ed' }
 };
 
-export default function Attendance({ workerName }) {
-  const [status, setStatus] = useState('offline'); 
-  const [loading, setLoading] = useState(true); 
-  const [logs, setLogs] = useState([]);
-  
-  const [projects, setProjects] = useState([]);
-  const [selectedProject, setSelectedProject] = useState('');
-  const [capturedPhoto, setCapturedPhoto] = useState(null);
+export default function Login({ onLogin }) {
+  const [users, setUsers] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedUserId, setSelectedUserId] = useState(null);
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const qStatus = query(
-      collection(db, 'attendance'),
-      where('workerName', '==', workerName),
-      orderBy('timestamp', 'desc'),
-      limit(1)
-    );
-
-    const unsubStatus = onSnapshot(qStatus, (snapshot) => {
-      if (!snapshot.empty) {
-        const lastAction = snapshot.docs[0].data();
-        setStatus(lastAction.type === 'start' ? 'online' : 'offline');
-      } else {
-        setStatus('offline'); 
-      }
-      setLoading(false); 
-    });
-
-    const qLogs = query(collection(db, 'attendance'), orderBy('timestamp', 'desc'), limit(5));
-    const unsubLogs = onSnapshot(qLogs, (snapshot) => {
-      setLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-
-    const qProjects = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
-    const unsubProjects = onSnapshot(qProjects, (snapshot) => {
-      setProjects(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-
-    return () => {
-      unsubStatus();
-      unsubLogs();
-      unsubProjects();
-    };
-  }, [workerName]);
-
-  const handlePhotoCapture = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => setCapturedPhoto(reader.result);
-    reader.readAsDataURL(file);
-  };
-
-  const handleClockAction = async (actionType) => {
-    if (actionType === 'start' && !selectedProject) {
-      alert("Пожалуйста, выберите объект (стройку) из списка!");
-      return;
-    }
-    
-    // ЗАЩИТА: Фото обязательно и при старте, и при завершении
-    if (!capturedPhoto) {
-      alert("Сделайте фото с объекта! Без фото отметка не принимается.");
-      return;
-    }
-
-    setLoading(true);
-    navigator.geolocation.getCurrentPosition(async (position) => {
-      const { latitude, longitude } = position.coords;
-      
-      // ЗАЩИТА: Гео-забор (Проверка дистанции до объекта)
-      if (actionType === 'start') {
-        const currentProject = projects.find(p => p.name === selectedProject);
-        // Если у объекта в базе есть координаты
-        if (currentProject && currentProject.lat && currentProject.lng) {
-          const distance = getDistanceInMeters(latitude, longitude, currentProject.lat, currentProject.lng);
-          
-          // Радиус 500 метров (можешь уменьшить до 200, если нужно жестче)
-          if (distance > 500) {
-            alert(`🛑 ВЫ СЛИШКОМ ДАЛЕКО ОТ ОБЪЕКТА!\n\nДистанция до стройки: ${distance} метров. Подойдите ближе, чтобы начать смену.`);
-            setLoading(false);
-            return; // Блокируем отправку данных
-          }
-        }
-      }
-
-      try {
-        let photoUrl = "";
-        if (capturedPhoto) {
-          const storageRef = ref(storage, `attendance/${Date.now()}_${workerName}.jpg`);
-          await uploadString(storageRef, capturedPhoto, 'data_url');
-          photoUrl = await getDownloadURL(storageRef);
-        }
-
-        await addDoc(collection(db, 'attendance'), {
-          workerName,
-          type: actionType,
-          projectName: actionType === 'start' ? selectedProject : 'Завершение',
-          timestamp: new Date(),
-          location: { lat: latitude, lng: longitude },
-          photoUrl
-        });
-
-        setCapturedPhoto(null);
-        if (actionType === 'end') setSelectedProject('');
-      } catch (e) {
-        alert('Ошибка сохранения: ' + e.message);
-      } finally {
-        setLoading(false);
-      }
-    }, () => {
-      alert('Включите GPS на устройстве! Без геолокации отметка не работает.');
+    const q = query(collection(db, 'workers'), orderBy('name', 'asc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setLoading(false);
-    }, { enableHighAccuracy: true }); // Требуем точный GPS
-  };
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // ПРОВЕРКА ПИН-КОДА (Срабатывает только при ручном вводе ровно 4-й цифры)
+  useEffect(() => {
+    if (pin.length === 4 && selectedUserId) {
+      const user = users.find(u => u.id === selectedUserId);
+      if (user && user.pin === pin) {
+        onLogin(user); // ПИН верный -> пускаем в систему
+      } else {
+        setError('Неверный ПИН-код!');
+        setPin(''); // ПИН неверный -> мгновенно очищаем поле
+      }
+    }
+  }, [pin, selectedUserId, users, onLogin]);
+
+  const filteredUsers = users.filter(u => 
+    u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (roleConfig[u.role]?.text || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f8fafc', color: '#64748b', fontSize: '20px', fontWeight: '800' }}>
+        Загрузка...
+      </div>
+    );
+  }
 
   return (
-    <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-      <h2 style={{ marginBottom: '20px', fontSize: '20px', fontWeight: 'bold', color: '#1a1a1a' }}>
-        Смена: {workerName}
-      </h2>
-
-      {status === 'offline' && (
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: '#555' }}>
-            📍 На каком вы объекте?
-          </label>
-          <select 
-            value={selectedProject} 
-            onChange={(e) => setSelectedProject(e.target.value)}
-            style={{ width: '100%', padding: '15px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '16px', backgroundColor: '#f9f9f9' }}
-          >
-            <option value="">-- Выберите стройку --</option>
-            {projects.map(proj => (
-              <option key={proj.id} value={proj.name}>{proj.name}</option>
-            ))}
-          </select>
+    <div style={{ minHeight: '100vh', backgroundColor: '#f1f5f9', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      
+      {/* ЛОГОТИП */}
+      <div style={{ margin: '40px 0', textAlign: 'center', animation: 'fadeInDown 0.5s ease-out' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginBottom: '8px' }}>
+          <ShieldCheck size={56} color="#e31e24" />
+          <h1 style={{ margin: 0, fontSize: '56px', fontWeight: '900', color: '#1e293b', letterSpacing: '-1px' }}>
+            ANGAR<span style={{ color: '#e31e24' }}>.MD</span>
+          </h1>
         </div>
-      )}
+      </div>
 
-      {/* БЛОК ФОТО И ПРЕДУПРЕЖДЕНИЙ */}
-      <div style={{ marginBottom: '20px', textAlign: 'center' }}>
+      <div style={{ width: '100%', maxWidth: '800px', animation: 'fadeInUp 0.5s ease-out' }}>
         
-        {/* Предупреждение для рабочих */}
-        {!capturedPhoto && (
-          <div style={{ backgroundColor: '#fff3e0', border: '1px solid #ffcc80', color: '#e65100', padding: '12px', borderRadius: '4px', marginBottom: '15px', fontSize: '13px', lineHeight: '1.4', textAlign: 'left', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-            <ShieldAlert size={24} style={{ flexShrink: 0 }} />
-            <span><b>Анти-чит контроль:</b> Селфи нужно делать строго <b>на фоне объекта</b>. Система также проверяет вашу GPS-позицию.</span>
-          </div>
-        )}
+        {/* ПОИСК */}
+        <div style={{ position: 'relative', marginBottom: '32px' }}>
+          <Search style={{ position: 'absolute', left: '24px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} size={32} />
+          <input 
+            type="text" 
+            placeholder="Поиск сотрудника..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ width: '100%', padding: '28px 28px 28px 76px', borderRadius: '24px', border: 'none', backgroundColor: '#fff', fontSize: '22px', fontWeight: '700', color: '#1e293b', outline: 'none', boxShadow: '0 10px 30px -5px rgba(0,0,0,0.05)', boxSizing: 'border-box' }}
+          />
+        </div>
 
-        {capturedPhoto ? (
-          <div>
-            <img src={capturedPhoto} alt="Превью" style={{ width: '100%', borderRadius: '8px', border: '3px solid #2e7d32', marginBottom: '10px' }} />
-            <div style={{ color: '#2e7d32', fontWeight: 'bold' }}>✅ Фото загружено.</div>
-            <button onClick={() => setCapturedPhoto(null)} style={{ background: 'none', border: 'none', color: '#007bff', textDecoration: 'underline', marginTop: '10px', cursor: 'pointer' }}>Переснять фото</button>
-          </div>
-        ) : (
-          <div style={{ position: 'relative', overflow: 'hidden', display: 'inline-block', width: '100%' }}>
-            <button style={{ width: '100%', padding: '20px', backgroundColor: '#f0f0f0', color: '#1a1a1a', border: '2px dashed #ccc', fontWeight: 'bold', fontSize: '16px', borderRadius: '8px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
-              <Camera size={32} color="#666" />
-              СДЕЛАТЬ ФОТО ДЛЯ {status === 'online' ? 'УХОДА' : 'ПРИХОДА'}
-            </button>
-            <input type="file" accept="image/*" capture="environment" onChange={handlePhotoCapture} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }} />
-          </div>
-        )}
-      </div>
+        {/* СПИСОК ПРОФИЛЕЙ */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {filteredUsers.map(u => {
+            const isSelected = selectedUserId === u.id;
+            const role = roleConfig[u.role] || roleConfig.worker;
+            const initial = u.name.charAt(0).toUpperCase();
 
-      <div style={{ display: 'grid', gap: '15px' }}>
-        <button 
-          onClick={() => handleClockAction('start')} 
-          disabled={loading || status === 'online'} 
-          style={{ padding: '20px', backgroundColor: '#2e7d32', color: '#fff', border: 'none', fontWeight: 'bold', fontSize: '18px', cursor: status === 'online' ? 'not-allowed' : 'pointer', borderRadius: '4px', opacity: status === 'online' ? 0.5 : 1 }}
-        >
-          {loading && status === 'offline' ? 'ОТПРАВКА...' : '▶ НАЧАТЬ СМЕНУ'}
-        </button>
+            return (
+              <div 
+                key={u.id} 
+                style={{ backgroundColor: '#fff', borderRadius: '28px', overflow: 'hidden', boxShadow: isSelected ? '0 25px 50px -12px rgba(0,0,0,0.15)' : '0 6px 15px rgba(0,0,0,0.03)', transition: 'all 0.2s', border: isSelected ? `3px solid ${role.color}` : '3px solid transparent' }}
+              >
+                {/* ШАПКА КАРТОЧКИ */}
+                <div 
+                  onClick={() => { 
+                    setSelectedUserId(isSelected ? null : u.id); 
+                    setError(''); 
+                    setPin(''); // Жестко сбрасываем ПИН при клике
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', padding: '30px', cursor: 'pointer', backgroundColor: isSelected ? '#f8fafc' : '#fff' }}
+                >
+                  <div style={{ width: '80px', height: '80px', borderRadius: '50%', backgroundColor: role.bg, color: role.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', fontWeight: '900', flexShrink: 0 }}>
+                    {u.photoUrl ? <img src={u.photoUrl} alt={u.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : initial}
+                  </div>
 
-        <button 
-          onClick={() => handleClockAction('end')} 
-          disabled={loading || status === 'offline'} 
-          style={{ padding: '20px', backgroundColor: '#e31e24', color: '#fff', border: 'none', fontWeight: 'bold', fontSize: '18px', cursor: status === 'offline' ? 'not-allowed' : 'pointer', borderRadius: '4px', opacity: status === 'offline' ? 0.5 : 1 }}
-        >
-          {loading && status === 'online' ? 'ОТПРАВКА...' : '■ ЗАВЕРШИТЬ СМЕНУ'}
-        </button>
-      </div>
+                  <div style={{ flex: 1, marginLeft: '24px', textAlign: 'left' }}>
+                    <div style={{ fontSize: '28px', fontWeight: '900', color: '#1e293b', marginBottom: '8px' }}>{u.name}</div>
+                    <div style={{ display: 'inline-block', padding: '8px 16px', backgroundColor: role.bg, color: role.color, borderRadius: '10px', fontSize: '16px', fontWeight: '800' }}>
+                      {role.text}
+                    </div>
+                  </div>
 
-      <div style={{ marginTop: '30px' }}>
-        <h4 style={{ borderBottom: '1px solid #ddd', paddingBottom: '10px', textAlign: 'left', color: '#1a1a1a' }}>Последние действия:</h4>
-        {logs.map(log => (
-          <div key={log.id} style={{ padding: '12px 0', borderBottom: '1px solid #eee', fontSize: '14px', textAlign: 'left', display: 'flex', gap: '15px', alignItems: 'center' }}>
-            {log.photoUrl && <img src={log.photoUrl} style={{ width: '60px', height: '60px', borderRadius: '4px', objectFit: 'cover', border: '1px solid #ccc' }} alt="Снимок" />}
-            <div>
-              <strong>{log.type === 'start' ? '✅ Приход' : '🛑 Уход'}</strong> 
-              {log.projectName && log.projectName !== 'Завершение' && <span style={{ color: '#e31e24', fontWeight: 'bold' }}> ({log.projectName})</span>}
-              <br/>{log.timestamp?.toDate().toLocaleString('ru-RU')}
-              <div style={{ color: '#555', fontWeight: 'bold', marginTop: '2px' }}>👤 {log.workerName}</div>
-              {/* Исправленная ссылка на Google Карты */}
-              <a href={`https://www.google.com/maps?q=${log.location?.lat},${log.location?.lng}`} target="_blank" rel="noopener noreferrer" style={{ color: '#007bff', textDecoration: 'none', fontSize: '12px', display: 'block', marginTop: '3px' }}>
-                <MapPin size={12} /> Посмотреть на карте
-              </a>
-            </div>
-          </div>
-        ))}
+                  <div style={{ transform: isSelected ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s', color: '#94a3b8' }}>
+                    <ChevronDown size={40} />
+                  </div>
+                </div>
+
+                {/* БЛОК ВВОДА ПИН-КОДА */}
+                {isSelected && (
+                  <div style={{ padding: '40px 20px', backgroundColor: '#fff', borderTop: '2px solid #f1f5f9' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
+                      
+                      {/* ИНСТРУКЦИЯ ДЛЯ ПЕРСОНАЛА */}
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', color: '#1e293b', fontWeight: '900', fontSize: '24px', marginBottom: '8px' }}>
+                          <Lock size={28} color="#e31e24" /> ВВЕДИТЕ 4 ЦИФРЫ ПИН-КОДА
+                        </div>
+                        <div style={{ color: '#e31e24', fontSize: '15px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                          (Система пустит вас только после ввода 4-й цифры)
+                        </div>
+                      </div>
+
+                      {/* ВАЖНО: autoComplete="new-password" и нестандартный name
+                         запрещают браузеру самому подставлять сохраненные пароли.
+                         Только ручной ввод!
+                      */}
+                      <input 
+                        type="password" 
+                        inputMode="numeric" 
+                        pattern="[0-9]*"
+                        maxLength="4" 
+                        autoFocus
+                        autoComplete="new-password"
+                        name="secure-pin-input-no-autofill"
+                        value={pin} 
+                        onChange={(e) => { setPin(e.target.value.replace(/\D/g, '')); setError(''); }}
+                        style={{ 
+                          width: '280px', 
+                          padding: '24px', 
+                          fontSize: '56px', 
+                          letterSpacing: '28px', 
+                          textAlign: 'center', 
+                          borderRadius: '24px', 
+                          border: error ? '4px solid #ef4444' : '4px solid #cbd5e1', 
+                          backgroundColor: '#f8fafc', 
+                          color: '#1e293b', 
+                          fontWeight: '900', 
+                          outline: 'none',
+                          paddingLeft: '56px' 
+                        }} 
+                      />
+
+                      {error && (
+                        <div style={{ color: '#ef4444', fontWeight: '900', fontSize: '20px', backgroundColor: '#fef2f2', padding: '16px 32px', borderRadius: '16px', marginTop: '10px' }}>
+                          {error}
+                        </div>
+                      )}
+
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

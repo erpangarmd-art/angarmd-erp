@@ -1,11 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from './firebase';
-import { User, Lock, KeyRound } from 'lucide-react';
+import { Search, ChevronDown, Lock, ShieldCheck } from 'lucide-react';
+
+const roleConfig = {
+  admin: { text: 'Директор', color: '#e31e24', bg: '#fef2f2' },
+  foreman: { text: 'Прораб', color: '#059669', bg: '#ecfdf5' },
+  pto: { text: 'Начальник ПТО', color: '#d97706', bg: '#fffbeb' },
+  driver: { text: 'Водитель', color: '#2563eb', bg: '#eff6ff' },
+  worker: { text: 'Рабочий', color: '#ea580c', bg: '#fff7ed' }
+};
 
 export default function Login({ onLogin }) {
-  const [workers, setWorkers] = useState([]);
-  const [selectedWorker, setSelectedWorker] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedUserId, setSelectedUserId] = useState(null);
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -13,94 +22,147 @@ export default function Login({ onLogin }) {
   useEffect(() => {
     const q = query(collection(db, 'workers'), orderBy('name', 'asc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setWorkers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (selectedWorker.pin === pin) {
-      // Передаем весь объект пользователя в систему
-      onLogin(selectedWorker);
-    } else {
-      setError('❌ Неверный ПИН-код!');
-      setPin('');
+  // МАГИЯ АВТОВХОДА: Срабатывает ровно на 4-й цифре
+  useEffect(() => {
+    if (pin.length === 4 && selectedUserId) {
+      const user = users.find(u => u.id === selectedUserId);
+      if (user && user.pin === pin) {
+        onLogin(user); // ПИН верный -> мгновенно пускаем в систему
+      } else {
+        setError('Неверный ПИН-код!');
+        setPin(''); // ПИН неверный -> стираем цифры, чтобы можно было сразу ввести заново
+      }
     }
-  };
+  }, [pin, selectedUserId, users, onLogin]);
 
-  // Перевод системных ролей для красивого отображения
-  const getRoleLabel = (role) => {
-    switch(role) {
-      case 'admin': return <span style={{color: '#e31e24', fontWeight: 'bold'}}>(Директор)</span>;
-      case 'foreman': return <span style={{color: '#673ab7', fontWeight: 'bold'}}>(Прораб)</span>;
-      case 'pto': return <span style={{color: '#ff9800', fontWeight: 'bold'}}>(Отдел ПТО)</span>;
-      case 'driver': return <span style={{color: '#007bff'}}>(Водитель)</span>;
-      default: return <span style={{color: '#888'}}>(Рабочий)</span>;
-    }
-  };
+  const filteredUsers = users.filter(u => 
+    u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (roleConfig[u.role]?.text || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
-  if (loading) return <div style={{textAlign: 'center', marginTop: '50px'}}>Загрузка профилей...</div>;
-
-  // Экран ввода ПИН-кода
-  if (selectedWorker) {
+  if (loading) {
     return (
-      <div style={{ maxWidth: '350px', margin: '50px auto', padding: '20px', backgroundColor: '#fff', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', textAlign: 'center' }}>
-        <button onClick={() => {setSelectedWorker(null); setError(''); setPin('');}} style={{ background: 'none', border: 'none', color: '#007bff', marginBottom: '20px', cursor: 'pointer', fontSize: '14px' }}>
-          ← Выбрать другой профиль
-        </button>
-        
-        <div style={{ marginBottom: '20px' }}>
-          <div style={{ width: '60px', height: '60px', backgroundColor: '#f0f0f0', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px auto' }}>
-            <User size={30} color="#1a1a1a" />
-          </div>
-          <h2 style={{ margin: 0, fontSize: '20px', color: '#1a1a1a' }}>{selectedWorker.name}</h2>
-          <div style={{ fontSize: '14px', marginTop: '5px' }}>{getRoleLabel(selectedWorker.role)}</div>
-        </div>
-
-        <form onSubmit={handleLogin}>
-          <div style={{ position: 'relative', marginBottom: '15px' }}>
-            <KeyRound size={20} color="#666" style={{ position: 'absolute', left: '15px', top: '15px' }} />
-            <input 
-              type="password" 
-              placeholder="Введите 4 цифры ПИН" 
-              maxLength="4"
-              value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-              autoFocus
-              style={{ width: '100%', padding: '15px 15px 15px 45px', border: '2px solid #ccc', borderRadius: '4px', fontSize: '18px', boxSizing: 'border-box', letterSpacing: '4px', textAlign: 'center' }}
-            />
-          </div>
-          {error && <div style={{ color: '#e31e24', marginBottom: '15px', fontSize: '14px', fontWeight: 'bold' }}>{error}</div>}
-          <button type="submit" disabled={pin.length !== 4} style={{ width: '100%', padding: '15px', backgroundColor: pin.length === 4 ? '#2e7d32' : '#ccc', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '16px', fontWeight: 'bold', cursor: pin.length === 4 ? 'pointer' : 'not-allowed' }}>
-            ВОЙТИ
-          </button>
-        </form>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f8fafc', color: '#64748b', fontSize: '20px', fontWeight: '800' }}>
+        Загрузка...
       </div>
     );
   }
 
-  // Экран выбора пользователя
   return (
-    <div style={{ maxWidth: '400px', margin: '40px auto', padding: '0 20px' }}>
-      <h2 style={{ textAlign: 'center', color: '#1a1a1a', marginBottom: '30px' }}>Выберите профиль</h2>
-      <div style={{ display: 'grid', gap: '10px' }}>
-        {workers.map(worker => (
-          <button 
-            key={worker.id}
-            onClick={() => setSelectedWorker(worker)}
-            style={{ display: 'flex', alignItems: 'center', gap: '15px', padding: '20px', backgroundColor: '#fff', border: '1px solid #eee', borderRadius: '8px', cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,0,0,0.05)', textAlign: 'left' }}
-          >
-            <div style={{ backgroundColor: '#f5f5f5', padding: '10px', borderRadius: '50%' }}>
-              <User size={20} color="#555" />
-            </div>
-            <div>
-              <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#1a1a1a' }}>{worker.name}</div>
-              <div style={{ fontSize: '13px', marginTop: '2px' }}>{getRoleLabel(worker.role)}</div>
-            </div>
-          </button>
-        ))}
+    <div style={{ minHeight: '100vh', backgroundColor: '#f1f5f9', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      
+      {/* ЛОГОТИП */}
+      <div style={{ margin: '40px 0', textAlign: 'center', animation: 'fadeInDown 0.5s ease-out' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginBottom: '8px' }}>
+          <ShieldCheck size={56} color="#e31e24" />
+          <h1 style={{ margin: 0, fontSize: '56px', fontWeight: '900', color: '#1e293b', letterSpacing: '-1px' }}>
+            ANGAR<span style={{ color: '#e31e24' }}>.MD</span>
+          </h1>
+        </div>
+      </div>
+
+      <div style={{ width: '100%', maxWidth: '800px', animation: 'fadeInUp 0.5s ease-out' }}>
+        
+        {/* ПОИСК */}
+        <div style={{ position: 'relative', marginBottom: '32px' }}>
+          <Search style={{ position: 'absolute', left: '24px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} size={32} />
+          <input 
+            type="text" 
+            placeholder="Поиск сотрудника..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ width: '100%', padding: '28px 28px 28px 76px', borderRadius: '24px', border: 'none', backgroundColor: '#fff', fontSize: '22px', fontWeight: '700', color: '#1e293b', outline: 'none', boxShadow: '0 10px 30px -5px rgba(0,0,0,0.05)', boxSizing: 'border-box' }}
+          />
+        </div>
+
+        {/* СПИСОК ПРОФИЛЕЙ */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {filteredUsers.map(u => {
+            const isSelected = selectedUserId === u.id;
+            const role = roleConfig[u.role] || roleConfig.worker;
+            const initial = u.name.charAt(0).toUpperCase();
+
+            return (
+              <div 
+                key={u.id} 
+                style={{ backgroundColor: '#fff', borderRadius: '28px', overflow: 'hidden', boxShadow: isSelected ? '0 25px 50px -12px rgba(0,0,0,0.15)' : '0 6px 15px rgba(0,0,0,0.03)', transition: 'all 0.2s', border: isSelected ? `3px solid ${role.color}` : '3px solid transparent' }}
+              >
+                {/* ШАПКА КАРТОЧКИ (ОГРОМНАЯ) */}
+                <div 
+                  onClick={() => { setSelectedUserId(isSelected ? null : u.id); setError(''); setPin(''); }}
+                  style={{ display: 'flex', alignItems: 'center', padding: '30px', cursor: 'pointer', backgroundColor: isSelected ? '#f8fafc' : '#fff' }}
+                >
+                  {/* ГИГАНТСКАЯ АВАТАРКА */}
+                  <div style={{ width: '80px', height: '80px', borderRadius: '50%', backgroundColor: role.bg, color: role.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', fontWeight: '900', flexShrink: 0 }}>
+                    {u.photoUrl ? <img src={u.photoUrl} alt={u.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : initial}
+                  </div>
+
+                  {/* ИМЯ И ДОЛЖНОСТЬ (КРУПНЫМ ШРИФТОМ) */}
+                  <div style={{ flex: 1, marginLeft: '24px', textAlign: 'left' }}>
+                    <div style={{ fontSize: '28px', fontWeight: '900', color: '#1e293b', marginBottom: '8px' }}>{u.name}</div>
+                    <div style={{ display: 'inline-block', padding: '8px 16px', backgroundColor: role.bg, color: role.color, borderRadius: '10px', fontSize: '16px', fontWeight: '800' }}>
+                      {role.text}
+                    </div>
+                  </div>
+
+                  <div style={{ transform: isSelected ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s', color: '#94a3b8' }}>
+                    <ChevronDown size={40} />
+                  </div>
+                </div>
+
+                {/* ВВОД ПИН-КОДА */}
+                {isSelected && (
+                  <div style={{ padding: '40px 20px', backgroundColor: '#fff', borderTop: '2px solid #f1f5f9' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
+                      
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#475569', fontWeight: '900', fontSize: '20px' }}>
+                        <Lock size={28} color="#3b82f6" /> ВВЕДИТЕ 4 ЦИФРЫ
+                      </div>
+
+                      {/* ПОЛЕ ВВОДА (Звездочки) */}
+                      <input 
+                        type="password" 
+                        inputMode="numeric" 
+                        pattern="[0-9]*"
+                        maxLength="4" 
+                        autoFocus
+                        value={pin} 
+                        onChange={(e) => { setPin(e.target.value.replace(/\D/g, '')); setError(''); }}
+                        style={{ 
+                          width: '280px', 
+                          padding: '24px', 
+                          fontSize: '56px', 
+                          letterSpacing: '28px', 
+                          textAlign: 'center', 
+                          borderRadius: '24px', 
+                          border: error ? '4px solid #ef4444' : '4px solid #cbd5e1', 
+                          backgroundColor: '#f8fafc', 
+                          color: '#1e293b', 
+                          fontWeight: '900', 
+                          outline: 'none',
+                          paddingLeft: '56px' 
+                        }} 
+                      />
+
+                      {error && (
+                        <div style={{ color: '#ef4444', fontWeight: '900', fontSize: '20px', backgroundColor: '#fef2f2', padding: '16px 32px', borderRadius: '16px', marginTop: '10px' }}>
+                          {error}
+                        </div>
+                      )}
+
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

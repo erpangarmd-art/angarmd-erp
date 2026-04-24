@@ -1,6 +1,10 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage"; // <-- ДОБАВЛЕНО: импорт функции хранилища
+import { 
+  initializeFirestore, 
+  persistentLocalCache, 
+  persistentMultipleTabManager 
+} from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDYDcigAsKl7gY1qROG3RY66kItFli-l64",
@@ -12,5 +16,13 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
-export const storage = getStorage(app); // <-- ДОБАВЛЕНО: экспорт самого хранилища
+
+// ВКЛЮЧАЕМ ОФФЛАЙН-РЕЖИМ (КЭШИРОВАНИЕ ДАННЫХ)
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  })
+});
+
+// Экспорт хранилища для фотографий
+export const storage = getStorage(app);

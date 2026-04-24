@@ -1,21 +1,35 @@
 import React, { useState, useEffect } from 'react';
-import { collection, addDoc, onSnapshot, query, orderBy, serverTimestamp } from 'firebase/firestore';
-import { db } from './firebase';
-import { MapPin, Plus, HardHat, Building, ChevronDown, ChevronUp } from 'lucide-react'; // Добавили иконки стрелочек
-import ProjectChecklist from './ProjectChecklist'; 
+import { collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
+import { db, storage } from './firebase';
+import { Plus, Building, FolderKanban, FileSpreadsheet, ArrowDownWideNarrow, MapPinned } from 'lucide-react';
+import ProjectCard from './ProjectCard';
+import { AddProjectModal, EditProjectModal } from './ProjectModals';
+import ProjectMap from './ProjectMap';
 
 export default function Objects({ user }) {
   const [projects, setProjects] = useState([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  
-  // Состояние для хранения открытых карточек (какие чек-листы развернуты)
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [showArchived, setShowArchived] = useState(false); 
+  const [showMap, setShowMap] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState({});
+  const [activeTab, setActiveTab] = useState('all'); 
+  const [sortBy, setSortBy] = useState('newest'); 
 
-  // Поля для нового объекта
+  // Состояния для модалки Добавления
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectAddress, setNewProjectAddress] = useState('');
+  const [newProjectLat, setNewProjectLat] = useState(null); 
+  const [newProjectLng, setNewProjectLng] = useState(null); 
   const [newProjectManager, setNewProjectManager] = useState('');
+  const [newProjectManagerPhone, setNewProjectManagerPhone] = useState(''); // НОВОЕ: Телефон прораба
+  const [newProjectDeadline, setNewProjectDeadline] = useState(''); 
+  const [projectPhoto, setProjectPhoto] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState(null);
+  const [editPhoto, setEditPhoto] = useState(null);
 
   useEffect(() => {
     const q = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
@@ -31,147 +45,195 @@ export default function Objects({ user }) {
 
     setLoading(true);
     try {
+      let imageUrl = "";
+      if (projectPhoto) {
+        const storageRef = ref(storage, `projects/${Date.now()}_${newProjectName}.jpg`);
+        await uploadString(storageRef, projectPhoto, 'data_url');
+        imageUrl = await getDownloadURL(storageRef);
+      }
+
       await addDoc(collection(db, 'projects'), {
-        name: newProjectName,
-        address: newProjectAddress,
-        manager: newProjectManager,
-        status: 'Активен',
-        progress: 0, 
-        checklist: {}, 
-        createdAt: serverTimestamp(),
-        createdBy: user.name
+        name: newProjectName, address: newProjectAddress, lat: newProjectLat, lng: newProjectLng,
+        manager: newProjectManager, managerPhone: newProjectManagerPhone, deadline: newProjectDeadline, imageUrl: imageUrl, 
+        status: 'Активен', progress: 0, checklist: {}, 
+        createdAt: serverTimestamp(), createdBy: user.name
       });
       
-      setNewProjectName('');
-      setNewProjectAddress('');
-      setNewProjectManager('');
-      setIsModalOpen(false);
-    } catch (error) {
-      alert("Ошибка при создании объекта: " + error.message);
-    } finally {
-      setLoading(false);
+      setNewProjectName(''); setNewProjectAddress(''); setNewProjectLat(null); setNewProjectLng(null); 
+      setNewProjectManager(''); setNewProjectManagerPhone(''); setNewProjectDeadline(''); setProjectPhoto(null);
+      setIsAddModalOpen(false);
+    } catch (error) { alert("Ошибка при создании: " + error.message); } 
+    finally { setLoading(false); }
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      let newImageUrl = editingProject.imageUrl || "";
+      if (editPhoto) {
+        const storageRef = ref(storage, `projects/${Date.now()}_${editingProject.name}.jpg`);
+        await uploadString(storageRef, editPhoto, 'data_url');
+        newImageUrl = await getDownloadURL(storageRef);
+      }
+
+      await updateDoc(doc(db, 'projects', editingProject.id), {
+        name: editingProject.name, address: editingProject.address, manager: editingProject.manager, 
+        managerPhone: editingProject.managerPhone || '', deadline: editingProject.deadline || '', imageUrl: newImageUrl 
+      });
+      
+      setIsEditModalOpen(false); setEditingProject(null); setEditPhoto(null);
+    } catch (error) { alert("Ошибка обновления: " + error.message); } 
+    finally { setLoading(false); }
+  };
+
+  const handleToggleArchive = async (e, project) => {
+    e.stopPropagation();
+    const newStatus = project.status === 'Архив' ? 'Активен' : 'Архив';
+    if (window.confirm(`Отправить "${project.name}" в ${newStatus === 'Архив' ? 'архив' : 'работу'}?`)) {
+      await updateDoc(doc(db, 'projects', project.id), { status: newStatus });
     }
   };
 
-  // Функция для открытия/закрытия конкретного чек-листа
-  const toggleProject = (projectId) => {
-    setExpandedProjects(prev => ({
-      ...prev,
-      [projectId]: !prev[projectId]
-    }));
+  const handleDeleteProject = async (e, id, name) => {
+    e.stopPropagation();
+    if (window.confirm(`⚠️ Удалить объект "${name}" навсегда?`)) {
+      await deleteDoc(doc(db, 'projects', id));
+    }
   };
 
+  const exportToCSV = () => {
+    let csvContent = "data:text/csv;charset=utf-8,\uFEFFНазвание,Адрес,Прораб,Готовность %,Дедлайн,Статус\n";
+    projects.forEach(p => {
+      const deadline = p.deadline ? new Date(p.deadline).toLocaleDateString('ru-RU') : 'Нет';
+      csvContent += `"${p.name}","${p.address || ''}","${p.manager || ''}","${p.progress || 0}","${deadline}","${p.status}"\n`;
+    });
+    const link = document.createElement("a");
+    link.href = encodeURI(csvContent);
+    link.download = `Objects_${new Date().toLocaleDateString('ru-RU')}.csv`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  };
+
+  let filteredProjects = projects.filter(p => showArchived ? p.status === 'Архив' : p.status !== 'Архив');
+  
+  if (!showArchived) {
+    if (activeTab === 'in_progress') filteredProjects = filteredProjects.filter(p => (p.progress || 0) < 100);
+    if (activeTab === 'ready') filteredProjects = filteredProjects.filter(p => (p.progress || 0) === 100);
+    if (activeTab === 'urgent') {
+      filteredProjects = filteredProjects.filter(p => {
+        if (!p.deadline || p.progress === 100) return false;
+        return ((new Date(p.deadline) - new Date()) / (1000 * 60 * 60 * 24)) <= 30; 
+      });
+    }
+  }
+
+  if (sortBy === 'deadline_asc') {
+    filteredProjects.sort((a, b) => (!a.deadline ? 1 : !b.deadline ? -1 : new Date(a.deadline) - new Date(b.deadline)));
+  } else if (sortBy === 'progress_asc') {
+    filteredProjects.sort((a, b) => (a.progress || 0) - (b.progress || 0));
+  } else if (sortBy === 'progress_desc') {
+    filteredProjects.sort((a, b) => (b.progress || 0) - (a.progress || 0));
+  }
+
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h2 style={{ margin: 0, color: '#1a1a1a', fontSize: '24px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <Building size={28} color="#e31e24" /> Объекты в работе
+    <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
+      <style>{`
+        .action-btn { background: #f3f4f6; color: #374151; border: none; border-radius: 20px; padding: 6px 14px; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 6px; cursor: pointer; transition: all 0.2s; }
+        .action-btn:hover { background: #e5e7eb; transform: translateY(-1px); }
+        .nav-tab { background: none; border: none; padding: 10px 0; margin-right: 24px; font-size: 15px; font-weight: 700; cursor: pointer; position: relative; color: #6b7280; transition: color 0.2s; }
+        .nav-tab.active { color: #111827; }
+        .nav-tab.active::after { content: ''; position: absolute; bottom: -2px; left: 0; width: 100%; height: 3px; background-color: #e31e24; border-radius: 3px; }
+        @media (max-width: 768px) { .sort-select { width: 100%; margin-top: 10px; } }
+      `}</style>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
+        <h2 style={{ margin: 0, color: '#111827', fontSize: '26px', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <Building size={28} color="#e31e24" /> {showArchived ? 'Архив объектов' : 'Объекты в работе'}
         </h2>
         
-        {user.role === 'admin' && (
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 15px', backgroundColor: '#e31e24', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-          >
-            <Plus size={18} /> Новый объект
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button onClick={() => setShowMap(!showMap)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: showMap ? '#e0e7ff' : '#f8fafc', color: showMap ? '#3b82f6' : '#475569', border: '1px solid #cbd5e1', borderRadius: '12px', cursor: 'pointer', fontWeight: '800', fontSize: '14px', transition: 'all 0.2s' }}>
+            <MapPinned size={18} /> Карта
           </button>
-        )}
+          
+          {user.role === 'admin' && (
+            <button onClick={exportToCSV} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: '700', fontSize: '14px' }}>
+              <FileSpreadsheet size={18} /> Excel
+            </button>
+          )}
+          <button onClick={() => setShowArchived(!showArchived)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: '#4b5563', border: '1px solid #d1d5db', borderRadius: '12px', cursor: 'pointer', fontWeight: '700', fontSize: '14px' }}>
+            <FolderKanban size={18} /> {showArchived ? 'Активные' : 'Архив'}
+          </button>
+          {user.role === 'admin' && (
+            <button onClick={() => setIsAddModalOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', backgroundColor: '#111827', color: '#fff', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: '800', fontSize: '14px', boxShadow: '0 4px 10px rgba(0,0,0,0.15)' }}>
+              <Plus size={18} /> НОВЫЙ ОБЪЕКТ
+            </button>
+          )}
+        </div>
       </div>
 
-      {isModalOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '20px' }}>
-          <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '8px', width: '100%', maxWidth: '400px', position: 'relative' }}>
-            <h3 style={{ margin: '0 0 20px 0' }}>🏗️ Добавить новую стройку</h3>
-            <form onSubmit={handleAddProject} style={{ display: 'grid', gap: '15px' }}>
-              
-              <div>
-                <label style={{ fontSize: '12px', color: '#666', fontWeight: 'bold' }}>Название объекта</label>
-                <input type="text" value={newProjectName} onChange={(e)=>setNewProjectName(e.target.value)} required style={{ width: '100%', padding: '12px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', marginTop: '5px' }} />
-              </div>
+      {showMap && !showArchived && (
+        <ProjectMap projects={projects} />
+      )}
 
-              <div>
-                <label style={{ fontSize: '12px', color: '#666', fontWeight: 'bold' }}>Адрес (Опционально)</label>
-                <input type="text" value={newProjectAddress} onChange={(e)=>setNewProjectAddress(e.target.value)} placeholder="ул. Лесная 12" style={{ width: '100%', padding: '12px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', marginTop: '5px' }} />
-              </div>
-
-              <div>
-                <label style={{ fontSize: '12px', color: '#666', fontWeight: 'bold' }}>Ответственный прораб</label>
-                <input type="text" value={newProjectManager} onChange={(e)=>setNewProjectManager(e.target.value)} placeholder="Ион" style={{ width: '100%', padding: '12px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box', marginTop: '5px' }} />
-              </div>
-
-              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                <button type="button" onClick={() => setIsModalOpen(false)} style={{ flex: 1, padding: '12px', backgroundColor: '#eee', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>Отмена</button>
-                <button type="submit" disabled={loading} style={{ flex: 1, padding: '12px', backgroundColor: '#e31e24', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>{loading ? 'Создаем...' : 'Создать'}</button>
-              </div>
-            </form>
+      {!showArchived && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #e5e7eb', marginBottom: '30px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', overflowX: 'auto', whiteSpace: 'nowrap' }}>
+            <button className={`nav-tab ${activeTab === 'all' ? 'active' : ''}`} onClick={() => setActiveTab('all')}>Все объекты</button>
+            <button className={`nav-tab ${activeTab === 'in_progress' ? 'active' : ''}`} onClick={() => setActiveTab('in_progress')}>В работе</button>
+            <button className={`nav-tab ${activeTab === 'ready' ? 'active' : ''}`} onClick={() => setActiveTab('ready')}>Готовые</button>
+            <button className={`nav-tab ${activeTab === 'urgent' ? 'active' : ''}`} onClick={() => setActiveTab('urgent')}>Срочные</button>
+          </div>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingBottom: '10px' }} className="sort-select">
+            <ArrowDownWideNarrow size={18} color="#6b7280" />
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{ border: 'none', backgroundColor: 'transparent', fontSize: '14px', fontWeight: '600', color: '#4b5563', outline: 'none', cursor: 'pointer' }}>
+              <option value="newest">Сначала новые</option>
+              <option value="deadline_asc">По дедлайну (Ближайшие)</option>
+              <option value="progress_asc">Меньше готовность (%)</option>
+              <option value="progress_desc">Больше готовность (%)</option>
+            </select>
           </div>
         </div>
       )}
 
-      {/* СПИСОК ОБЪЕКТОВ */}
-      <div style={{ display: 'grid', gap: '20px' }}>
-        {projects.map(project => {
-          const progress = project.progress || 0;
-          const isExpanded = expandedProjects[project.id]; // Проверяем, открыта ли карточка
-          
-          return (
-            <div key={project.id} style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', borderTop: '4px solid #1a1a1a', transition: 'all 0.3s ease' }}>
-              
-              {/* ШАПКА КАРТОЧКИ (Сделали кликабельной) */}
-              <div 
-                onClick={() => toggleProject(project.id)}
-                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '15px', cursor: 'pointer', userSelect: 'none' }}
-              >
-                <div>
-                  <h3 style={{ margin: '0 0 5px 0', fontSize: '20px', color: '#1a1a1a' }}>{project.name}</h3>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '15px', color: '#666', fontSize: '14px' }}>
-                    {project.address && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><MapPin size={14}/> {project.address}</span>}
-                    {project.manager && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><HardHat size={14}/> Прораб: {project.manager}</span>}
-                  </div>
-                </div>
-                
-                {/* Бейдж статуса + Стрелочка */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{ backgroundColor: progress === 100 ? '#e8f5e9' : '#e3f2fd', color: progress === 100 ? '#2e7d32' : '#1565c0', padding: '6px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold' }}>
-                    {progress === 100 ? 'Завершен' : 'В работе'}
-                  </div>
-                  <div style={{ backgroundColor: '#f4f6f8', borderRadius: '50%', padding: '5px', display: 'flex' }}>
-                    {isExpanded ? <ChevronUp size={20} color="#666" /> : <ChevronDown size={20} color="#666" />}
-                  </div>
-                </div>
-              </div>
+      <AddProjectModal 
+        isOpen={isAddModalOpen} 
+        onClose={() => { setIsAddModalOpen(false); setProjectPhoto(null); }} 
+        onSubmit={handleAddProject} 
+        loading={loading}
+        name={newProjectName} setName={setNewProjectName}
+        address={newProjectAddress} setAddress={setNewProjectAddress}
+        manager={newProjectManager} setManager={setNewProjectManager}
+        managerPhone={newProjectManagerPhone} setManagerPhone={setNewProjectManagerPhone}
+        deadline={newProjectDeadline} setDeadline={setNewProjectDeadline}
+        lat={newProjectLat} setLat={setNewProjectLat}
+        lng={newProjectLng} setLng={setNewProjectLng}
+        photo={projectPhoto} setPhoto={setProjectPhoto}
+      />
 
-              {/* ПРОГРЕСС-БАР (Виден всегда, чтобы легко оценивать общую картину) */}
-              <div style={{ marginBottom: isExpanded ? '20px' : '0' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 'bold', color: '#1a1a1a', marginBottom: '5px' }}>
-                  <span>Готовность ангара:</span>
-                  <span>{progress}%</span>
-                </div>
-                <div style={{ width: '100%', height: '10px', backgroundColor: '#eee', borderRadius: '5px', overflow: 'hidden' }}>
-                  <div style={{ width: `${progress}%`, height: '100%', backgroundColor: progress === 100 ? '#2e7d32' : '#e31e24', transition: 'width 0.5s ease-in-out' }}></div>
-                </div>
-              </div>
+      <EditProjectModal 
+        isOpen={isEditModalOpen}
+        onClose={() => { setIsEditModalOpen(false); setEditingProject(null); setEditPhoto(null); }}
+        onSubmit={handleEditSubmit}
+        loading={loading}
+        project={editingProject} setProject={setEditingProject}
+        photo={editPhoto} setPhoto={setEditPhoto}
+      />
 
-              {/* СКРЫВАЕМЫЙ ЧЕК-ЛИСТ */}
-              {isExpanded && (
-                <div style={{ marginTop: '20px', borderTop: '1px solid #eee', paddingTop: '15px', animation: 'fadeIn 0.3s' }}>
-                  {['admin', 'foreman'].includes(user.role) ? (
-                    <ProjectChecklist project={project} user={user} />
-                  ) : (
-                    <p style={{ fontSize: '13px', color: '#888', fontStyle: 'italic', textAlign: 'center' }}>
-                      Просмотр и редактирование этапов доступно только руководству и прорабам.
-                    </p>
-                  )}
-                </div>
-              )}
-              
-            </div>
-          );
-        })}
-
-        {projects.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '40px', color: '#888', backgroundColor: '#fff', borderRadius: '8px', border: '1px dashed #ccc' }}>
-            У вас пока нет активных объектов. Нажмите "Новый объект", чтобы начать.
+      <div style={{ display: 'grid', gap: '24px' }}>
+        {filteredProjects.map((project, index) => (
+          <ProjectCard 
+            key={project.id} project={project} index={index} user={user}
+            isExpanded={expandedProjects[project.id]}
+            onToggleExpand={() => setExpandedProjects(prev => ({ ...prev, [project.id]: !prev[project.id] }))}
+            onEdit={(e) => { e.stopPropagation(); setEditingProject({ ...project }); setEditPhoto(null); setIsEditModalOpen(true); }}
+            onToggleArchive={handleToggleArchive} onDelete={handleDeleteProject}
+          />
+        ))}
+        {filteredProjects.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '60px 20px', color: '#6b7280', backgroundColor: '#fff', borderRadius: '24px', border: '2px dashed #e5e7eb', fontSize: '16px', fontWeight: '600' }}>
+            Нет объектов в данной категории.
           </div>
         )}
       </div>
